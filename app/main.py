@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+import secrets
+
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -38,6 +40,26 @@ class OfferIn(BaseModel):
     offer_id: int
 
 
+class ShareIn(BaseModel):
+    share: int
+
+
+@app.middleware("http")
+async def basic_auth(request: Request, call_next):
+    """Включается, если заданы BASIC_AUTH_USER и BASIC_AUTH_PASSWORD."""
+    from base64 import b64decode
+    from fastapi.responses import Response
+    if not config.BASIC_AUTH_USER:
+        return await call_next(request)
+    try:
+        user, _, pwd = b64decode(request.headers.get("authorization", "")[6:]).decode().partition(":")
+    except Exception:
+        user = pwd = ""
+    if secrets.compare_digest(user, config.BASIC_AUTH_USER) and secrets.compare_digest(pwd, config.BASIC_AUTH_PASSWORD):
+        return await call_next(request)
+    return Response("Нужен вход", status_code=401, headers={"WWW-Authenticate": 'Basic realm="keitaro-wrapper"'})
+
+
 @app.get("/api/meta")
 def meta(kt: KeitaroClient = Depends(get_keitaro)):
     return {
@@ -54,11 +76,10 @@ def meta(kt: KeitaroClient = Depends(get_keitaro)):
 
 
 @app.get("/api/offers")
-def offers(q: str = "", kt: KeitaroClient = Depends(get_keitaro)):
-    return [
-        {"id": o["id"], "name": o["name"], "country": o.get("country")}
-        for o in kt.offers(search=q or None)
-    ]
+def offers(q: str = "", page: int = 1, per_page: int = 20, kt: KeitaroClient = Depends(get_keitaro)):
+    per_page = min(max(per_page, 1), 100)
+    rows = kt.offers(search=q or None, limit=per_page, offset=(max(page, 1) - 1) * per_page)
+    return [{"id": o["id"], "name": o["name"], "country": o.get("country")} for o in rows]
 
 
 @app.post("/api/campaigns", status_code=201)
@@ -71,11 +92,16 @@ def create_campaign(body: CampaignIn, db: Session = Depends(get_db), kt: Keitaro
 
 
 @app.get("/api/campaigns")
-def list_campaigns(q: str = "", kt: KeitaroClient = Depends(get_keitaro)):
-    return [
-        {"id": c["id"], "name": c["name"], "state": c["state"], "group": c.get("group")}
-        for c in kt.campaigns(search=q or None)
-    ]
+def list_campaigns(q: str = "", page: int = 1, per_page: int = 20, kt: KeitaroClient = Depends(get_keitaro)):
+    per_page = min(max(per_page, 1), 100)
+    rows = kt.campaigns(search=q or None, limit=per_page + 1, offset=(max(page, 1) - 1) * per_page)
+    return {
+        "items": [
+            {"id": c["id"], "name": c["name"], "state": c["state"], "group": c.get("group")}
+            for c in rows[:per_page]
+        ],
+        "has_more": len(rows) > per_page,
+    }
 
 
 @app.get("/api/campaigns/{campaign_id}")
@@ -101,6 +127,16 @@ def add_offer(campaign_id: int, body: OfferIn, db: Session = Depends(get_db),
               kt: KeitaroClient = Depends(get_keitaro)):
     try:
         services.add_offer(db, kt, campaign_id, body.offer_id)
+    except (ValueError, LookupError) as e:
+        raise HTTPException(422, str(e))
+    return {"ok": True}
+
+
+@app.put("/api/campaigns/{campaign_id}/offers/{offer_id}")
+def set_share(campaign_id: int, offer_id: int, body: ShareIn, db: Session = Depends(get_db),
+              kt: KeitaroClient = Depends(get_keitaro)):
+    try:
+        services.set_share(db, kt, campaign_id, offer_id, body.share)
     except (ValueError, LookupError) as e:
         raise HTTPException(422, str(e))
     return {"ok": True}

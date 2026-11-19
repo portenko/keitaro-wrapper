@@ -132,6 +132,41 @@ def remove_offer(db: Session, kt: KeitaroClient, campaign_id: int, offer_id: int
     db.commit()
 
 
+def _rescale(others: list[tuple[int, int]], total: int) -> list[int]:
+    """Раскладывает total по долям others пропорционально, сумма точная."""
+    weights = [sh for _, sh in others]
+    if not sum(weights):
+        weights = [1] * len(others)
+    raw = [w * total / sum(weights) for w in weights]
+    out = [int(r) for r in raw]
+    order = sorted(range(len(raw)), key=lambda i: raw[i] - out[i], reverse=True)
+    for i in order[: total - sum(out)]:
+        out[i] += 1
+    return out
+
+
+def set_share(db: Session, kt: KeitaroClient, campaign_id: int, offer_id: int, share: int) -> None:
+    """Ставит оффера долю share, остальные пересчитываются пропорционально."""
+    stream = offers_stream(kt, campaign_id)
+    offers = [(o["offer_id"], o["share"]) for o in stream["offers"]]
+    if offer_id not in [i for i, _ in offers]:
+        raise ValueError("Оффера нет в кампании")
+    others = [(i, sh) for i, sh in offers if i != offer_id]
+    if not 1 <= share <= 100:
+        raise ValueError("Доля от 1 до 100")
+    if not others and share != 100:
+        raise ValueError("Единственный оффер получает 100%")
+    if others and share == 100:
+        raise ValueError("Остальным офферам нужна доля, максимум 99")
+    new = dict(zip([i for i, _ in others], _rescale(others, 100 - share))) if others else {}
+    new[offer_id] = share
+    kt.update_stream(stream["id"], {
+        "offers": [{"offer_id": i, "share": new[i], "state": "active"} for i, _ in offers],
+    })
+    db.add(OfferChange(campaign_id=campaign_id, offer_id=offer_id, action=f"share={share}"))
+    db.commit()
+
+
 def campaign_offers(kt: KeitaroClient, campaign_id: int, interval: str = "all_time") -> list[dict]:
     """Офферы кампании с реальной статистикой из отчёта Keitaro."""
     stream = offers_stream(kt, campaign_id)

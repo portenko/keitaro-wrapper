@@ -63,12 +63,22 @@ function suggestions(list, items, onPick) {
   list.onclick = (e) => { const li = e.target.closest("li"); if (li) { list.classList.add("hidden"); onPick(items[li.dataset.n]); } };
 }
 
-$("e-q").oninput = debounce(async () => {
+let campPage = 1;
+async function searchCampaigns(append = false) {
   const q = $("e-q").value.trim();
   if (!q) return suggestions($("e-list"), [], null);
-  const items = await api("/api/campaigns?q=" + encodeURIComponent(q)).catch(() => []);
-  suggestions($("e-list"), items.map((c) => ({id: c.id, label: `${c.name} (ID ${c.id})`})), (i) => openCampaign(i.id));
-});
+  campPage = append ? campPage + 1 : 1;
+  const r = await api(`/api/campaigns?q=${encodeURIComponent(q)}&page=${campPage}`).catch(() => ({items: [], has_more: false}));
+  const prev = append ? [...$("e-list").querySelectorAll("li[data-n]")].map((li) => li._item) : [];
+  const items = prev.concat(r.items.map((c) => ({id: c.id, label: `${c.name} (ID ${c.id})`})));
+  suggestions($("e-list"), items, (i) => openCampaign(i.id));
+  [...$("e-list").querySelectorAll("li[data-n]")].forEach((li, n) => { li._item = items[n]; });
+  if (r.has_more) {
+    $("e-list").insertAdjacentHTML("beforeend", `<li id="e-more" style="color:var(--acc)">Показать ещё</li>`);
+    $("e-more").onclick = (e) => { e.stopPropagation(); searchCampaigns(true); };
+  }
+}
+$("e-q").oninput = debounce(() => searchCampaigns(false));
 $("e-int").onchange = () => current && openCampaign(current);
 
 const num = (v, d = 2) => Number(v || 0).toLocaleString("ru-RU", {maximumFractionDigits: d});
@@ -83,7 +93,7 @@ async function openCampaign(id) {
     $("e-sub").textContent = `ID ${c.id} · ${c.domain || "без домена"} · группа ${c.group || "нет"}`;
     $("e-rows").innerHTML = c.offers.map((o) => `<tr>
       <td class="name">${esc(o.name)}<div class="hint">ID ${o.offer_id}</div></td>
-      <td>${o.share}%</td><td>${num(o.clicks, 0)}</td><td>${num(o.conversions, 0)}</td><td>${num(o.cr)}</td>
+      <td><input class="share" type="number" min="1" max="100" value="${o.share}" data-id="${o.offer_id}" data-old="${o.share}" style="width:64px;padding:5px 6px">%</td><td>${num(o.clicks, 0)}</td><td>${num(o.conversions, 0)}</td><td>${num(o.cr)}</td>
       <td>${num(o.revenue)}</td><td>${num(o.cost)}</td><td>${num(o.profit)}</td><td>${num(o.roi)}</td>
       <td><button class="btn del" data-id="${o.offer_id}">Удалить</button></td></tr>`).join("")
       || `<tr><td colspan="10" class="hint">В кампании нет офферов</td></tr>`;
@@ -92,6 +102,16 @@ async function openCampaign(id) {
       <td>${num(t.revenue)}</td><td>${num(t.cost)}</td><td>${num(t.profit)}</td><td></td><td></td></tr>`;
   } catch (e) { $("e-card").classList.remove("hidden"); note($("e-msg"), e.message, false); }
 }
+
+$("e-rows").onchange = async (e) => {
+  const inp = e.target.closest("input.share");
+  if (!inp) return;
+  try {
+    await api(`/api/campaigns/${current}/offers/${inp.dataset.id}`, {method: "PUT", body: JSON.stringify({share: Number(inp.value)})});
+    await openCampaign(current);
+    note($("e-msg"), "Доля сохранена, остальные пересчитаны", true);
+  } catch (err) { inp.value = inp.dataset.old; note($("e-msg"), err.message, false); }
+};
 
 $("e-rows").onclick = async (e) => {
   const b = e.target.closest("button.del");

@@ -1,7 +1,13 @@
 """Тонкий клиент Keitaro Admin API."""
+import time
+
 import httpx
 
 from . import config
+
+
+CACHE_TTL = 30
+_SHARED_CACHE: dict = {}
 
 
 class KeitaroError(Exception):
@@ -13,6 +19,7 @@ class KeitaroError(Exception):
 
 class KeitaroClient:
     def __init__(self, base_url: str | None = None, api_key: str | None = None, transport=None):
+        self._cache = _SHARED_CACHE
         self._http = httpx.Client(
             base_url=(base_url or config.KEITARO_URL) + "/admin_api/v1",
             headers={"Api-Key": api_key or config.KEITARO_API_KEY},
@@ -40,26 +47,40 @@ class KeitaroClient:
     def traffic_sources(self):
         return self._req("GET", "/traffic_sources")
 
-    def offers(self, search: str | None = None, limit: int = 50):
-        params = {"limit": limit}
-        if search:
-            params["q"] = search
-        return self._req("GET", "/offers", params=params)
+    def offers(self, search: str | None = None, limit: int = 50, offset: int = 0):
+        return self._filtered("/offers", search, limit, offset)
 
     def offer(self, offer_id: int):
         return self._req("GET", f"/offers/{offer_id}")
 
     # кампании
-    def campaigns(self, search: str | None = None, limit: int = 50):
-        params = {"limit": limit}
+    def campaigns(self, search: str | None = None, limit: int = 50, offset: int = 0):
+        return self._filtered("/campaigns", search, limit, offset)
+
+    def _filtered(self, path: str, search: str | None, limit: int, offset: int):
+        """Keitaro не фильтрует список по названию: забираем всё, ищем сами."""
+        rows = self._all(path)
         if search:
-            params["q"] = search
-        return self._req("GET", "/campaigns", params=params)
+            q = search.strip().lower()
+            rows = [r for r in rows if q in str(r["id"]) or q in r["name"].lower()]
+        return rows[offset: offset + limit]
+
+    def _all(self, path: str):
+        hit = self._cache.get(path)
+        if hit and time.monotonic() - hit[0] < CACHE_TTL:
+            return hit[1]
+        rows = self._req("GET", path, params={"limit": 1000})
+        self._cache[path] = (time.monotonic(), rows)
+        return rows
+
+    def invalidate(self):
+        self._cache.clear()
 
     def campaign(self, campaign_id: int):
         return self._req("GET", f"/campaigns/{campaign_id}")
 
     def create_campaign(self, payload: dict):
+        self.invalidate()
         return self._req("POST", "/campaigns", json=payload)
 
     def delete_campaign(self, campaign_id: int):

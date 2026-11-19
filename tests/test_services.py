@@ -150,3 +150,55 @@ def test_client_raises_on_http_error():
     with pytest.raises(KeitaroError) as e:
         KeitaroClient("https://x", "k", transport=t).domains()
     assert e.value.status == 403
+
+
+def test_set_share_rescales_others_to_100(db):
+    kt = FakeKeitaro()
+    make(db, kt)
+    for oid in (2, 3):
+        services.add_offer(db, kt, 7, oid)  # 34/33/33
+    services.set_share(db, kt, 7, 1, 50)
+    shares = {o["offer_id"]: o["share"] for o in kt.streams_[7][1]["offers"]}
+    assert shares[1] == 50 and sum(shares.values()) == 100
+    assert sorted((shares[2], shares[3])) == [25, 25]
+    services.set_share(db, kt, 7, 2, 10)
+    shares = {o["offer_id"]: o["share"] for o in kt.streams_[7][1]["offers"]}
+    assert shares[2] == 10 and sum(shares.values()) == 100
+
+
+@pytest.mark.parametrize("share", [0, 101, 100])
+def test_set_share_bounds(db, share):
+    kt = FakeKeitaro()
+    make(db, kt)
+    services.add_offer(db, kt, 7, 2)
+    with pytest.raises(ValueError):
+        services.set_share(db, kt, 7, 1, share)
+
+
+def test_single_offer_must_be_100(db):
+    kt = FakeKeitaro()
+    make(db, kt)
+    with pytest.raises(ValueError):
+        services.set_share(db, kt, 7, 1, 60)
+
+
+def test_rescale_exact_sum():
+    for total in (1, 7, 50, 99):
+        assert sum(services._rescale([(1, 34), (2, 33), (3, 33)], total)) == total
+    assert sum(services._rescale([(1, 0), (2, 0)], 100)) == 100
+
+
+def test_search_filters_by_name_and_id_and_pages():
+    rows = [{"id": i, "name": f"camp_{'portenko' if i % 2 else 'other'}_{i}"} for i in range(1, 11)]
+    calls = []
+
+    def handler(req):
+        calls.append(req.url.path)
+        return httpx.Response(200, json=rows)
+
+    kt = KeitaroClient("https://x", "k", transport=httpx.MockTransport(handler))
+    kt._cache = {}
+    assert [r["id"] for r in kt.campaigns("PORTENKO", limit=3)] == [1, 3, 5]
+    assert [r["id"] for r in kt.campaigns("portenko", limit=3, offset=3)] == [7, 9]
+    assert [r["id"] for r in kt.campaigns("10")] == [10]
+    assert len(calls) == 1  # один запрос к Keitaro, остальное из кэша

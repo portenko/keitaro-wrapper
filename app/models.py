@@ -31,5 +31,5 @@ class OfferChange(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     campaign_id: Mapped[int] = mapped_column(Integer, index=True)
     offer_id: Mapped[int] = mapped_column(Integer)
-    action: Mapped[str] = mapped_column(String(10))  # add | remove
+    action: Mapped[str] = mapped_column(String(20))  # add | remove | share=N
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
