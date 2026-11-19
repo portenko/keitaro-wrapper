@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keitaro wrapper</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--line:#e3e6ea;--ink:#1c2430;--mut:#6b7686;--acc:#2f6fed;--bad:#d64545;--ok:#2e9b57}
+  *{box-sizing:border-box} body{margin:0;font:15px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+  header{background:var(--card);border-bottom:1px solid var(--line);padding:0 20px;display:flex;gap:4px}
+  header button{border:0;background:none;padding:16px 14px;font:inherit;color:var(--mut);cursor:pointer;border-bottom:2px solid transparent}
+  header button.on{color:var(--ink);border-color:var(--acc)}
+  main{max-width:1000px;margin:24px auto;padding:0 16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:16px}
+  label{display:block;font-size:13px;color:var(--mut);margin:12px 0 4px}
+  input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;background:#fff}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:14px} @media(max-width:640px){.row{grid-template-columns:1fr}}
+  button.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:10px 18px;font:inherit;cursor:pointer;margin-top:16px}
+  button.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line);margin-top:0}
+  button.btn.del{background:#fff;color:var(--bad);border:1px solid var(--line);padding:5px 10px;margin:0}
+  button:disabled{opacity:.5;cursor:default}
+  table{width:100%;border-collapse:collapse} th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left} th{font-size:12px;color:var(--mut);font-weight:600}
+  td.name{white-space:normal;max-width:320px} tfoot td{font-weight:700;border-bottom:0}
+  .msg{margin-top:14px;padding:10px 12px;border-radius:8px;font-size:14px} .msg.ok{background:#e8f6ee;color:var(--ok)} .msg.err{background:#fbeaea;color:var(--bad)}
+  .bar{display:flex;gap:10px;align-items:end;flex-wrap:wrap} .bar>div{flex:1;min-width:180px}
+  .hint{font-size:12px;color:var(--mut);margin-top:4px} .hidden{display:none}
+  ul.sugg{list-style:none;margin:4px 0 0;padding:0;border:1px solid var(--line);border-radius:8px;max-height:200px;overflow:auto}
+  ul.sugg li{padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--line)} ul.sugg li:hover{background:var(--bg)}
+</style>
+</head>
+<body>
+<header>
+  <button id="t-create" class="on">Новая кампания</button>
+  <button id="t-edit">Редактор кампании</button>
+</header>
+<main>
+<section id="p-create">
+  <div class="card">
+    <h2 style="margin-top:0">Создать кампанию</h2>
+    <label>Название</label><input id="c-name" placeholder="test_portenko_campaign1">
+    <div class="row">
+      <div><label>Гео (код страны)</label><input id="c-geo" maxlength="2" placeholder="PL"></div>
+      <div><label>ID оффера</label><input id="c-offer" type="number" placeholder="18813"></div>
+    </div>
+    <div class="hint" id="c-offer-name"></div>
+    <div class="row">
+      <div><label>Домен</label><select id="c-domain"></select></div>
+      <div><label>Группа</label><select id="c-group"></select></div>
+    </div>
+    <label>Источник</label><select id="c-source"></select>
+    <button class="btn" id="c-go">Создать</button>
+    <div id="c-msg"></div>
+  </div>
+</section>
+
+<section id="p-edit" class="hidden">
+  <div class="card">
+    <div class="bar">
+      <div><label>Поиск кампании</label><input id="e-q" placeholder="название или ID"></div>
+      <div style="flex:0 0 160px"><label>Период</label>
+        <select id="e-int"><option value="all_time">Всё время</option><option value="today">Сегодня</option>
+        <option value="yesterday">Вчера</option><option value="last_7_days">7 дней</option><option value="last_30_days">30 дней</option></select></div>
+    </div>
+    <ul class="sugg hidden" id="e-list"></ul>
+  </div>
+  <div class="card hidden" id="e-card">
+    <h2 style="margin-top:0" id="e-title"></h2>
+    <div class="hint" id="e-sub"></div>
+    <div style="overflow:auto;margin-top:12px">
+    <table>
+      <thead><tr><th>Оффер</th><th>Доля</th><th>Клики</th><th>Конв.</th><th>CR %</th><th>Доход</th><th>Расход</th><th>Прибыль</th><th>ROI %</th><th></th></tr></thead>
+      <tbody id="e-rows"></tbody><tfoot id="e-foot"></tfoot>
+    </table></div>
+    <div class="bar" style="margin-top:18px">
+      <div><label>Добавить оффер (ID или название)</label><input id="a-q"><ul class="sugg hidden" id="a-list"></ul></div>
+      <div style="flex:0 0 140px"><button class="btn" id="a-go">Добавить</button></div>
+    </div>
+    <div id="e-msg"></div>
+  </div>
+</section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
